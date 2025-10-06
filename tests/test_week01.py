@@ -8,12 +8,8 @@ import pytest
 from pytest import FixtureRequest
 from pytest_regressions.ndarrays_regression import NDArraysRegressionFixture
 
-import week01
-from utils import (
-    parameterize_dominance_tests,
-    parameterize_general_sum_tests,
-    parameterize_zero_sum_tests,
-)
+from algorithmic_game_theory.solutions import week01
+from algorithmic_game_theory.tests import utils
 
 
 @pytest.fixture(scope='session')
@@ -23,17 +19,17 @@ def rng() -> np.random.Generator:
 
 @pytest.fixture(scope='session')
 def general_sum_data_stream(rng: np.random.Generator) -> Generator:
-    return parameterize_general_sum_tests(rng)
+    return utils.parameterize_general_sum_tests(rng)
 
 
 @pytest.fixture(scope='session')
 def zero_sum_data_stream(rng: np.random.Generator) -> Generator:
-    return parameterize_zero_sum_tests(rng)
+    return utils.parameterize_zero_sum_tests(rng)
 
 
 @pytest.fixture(scope='session')
 def dominance_data_stream(rng: np.random.Generator) -> Generator:
-    return parameterize_dominance_tests(rng)
+    return utils.parameterize_dominance_tests(rng)
 
 
 @pytest.mark.parametrize('general_sum_data_stream', range(5), indirect=True)
