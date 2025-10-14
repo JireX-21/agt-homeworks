@@ -9,37 +9,17 @@ import pytest
 from pytest import FixtureRequest
 from pytest_regressions.ndarrays_regression import NDArraysRegressionFixture
 
-<<<<<<< HEAD:tests/test_week01.py
-from algorithmic_game_theory.solutions import week01
-from algorithmic_game_theory.tests import utils
-=======
-import week01
-from utils import (
+import algorithmic_game_theory.solutions.week01 as week01
+from algorithmic_game_theory.tests.utils import (
     cache_data_stream_per_function,
     parameterize_random_dominance_tests,
     parameterize_random_general_sum_tests,
     parameterize_random_zero_sum_tests,
 )
->>>>>>> upstream/main:tests/test_week01_random.py
 
 BASE_SEED = 101
 
 
-<<<<<<< HEAD:tests/test_week01.py
-@pytest.fixture(scope='session')
-def general_sum_data_stream(rng: np.random.Generator) -> Generator:
-    return utils.parameterize_general_sum_tests(rng)
-
-
-@pytest.fixture(scope='session')
-def zero_sum_data_stream(rng: np.random.Generator) -> Generator:
-    return utils.parameterize_zero_sum_tests(rng)
-
-
-@pytest.fixture(scope='session')
-def dominance_data_stream(rng: np.random.Generator) -> Generator:
-    return utils.parameterize_dominance_tests(rng)
-=======
 @pytest.fixture
 def rng(request: FixtureRequest) -> np.random.Generator:
     """Create a random seed based on the function name to ensure reproducibility."""
@@ -66,7 +46,6 @@ def zero_sum_data_stream(request: FixtureRequest, rng: np.random.Generator) -> G
 @cache_data_stream_per_function
 def dominance_data_stream(request: FixtureRequest, rng: np.random.Generator) -> Generator:
     return parameterize_random_dominance_tests(rng)
->>>>>>> upstream/main:tests/test_week01_random.py
 
 
 @pytest.mark.parametrize('general_sum_data_stream', range(5), indirect=True)

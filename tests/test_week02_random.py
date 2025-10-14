@@ -9,8 +9,8 @@ import pytest
 from pytest import FixtureRequest
 from pytest_regressions.ndarrays_regression import NDArraysRegressionFixture
 
-import week02
-from utils import (
+import algorithmic_game_theory.solutions.week02 as week02
+from algorithmic_game_theory.tests.utils import (
     cache_data_stream_per_function,
     parameterize_random_general_sum_tests,
     parameterize_random_zero_sum_tests,
