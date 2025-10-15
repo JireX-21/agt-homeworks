@@ -65,121 +65,150 @@ def verify_support(
     """
     num_rows, num_cols = matrix.shape
 
-    # Indices of actions in the supports
-    row_indices = np.where(row_support == 1)[0]
-    col_indices = np.where(col_support == 1)[0]
+    # Get the indices of the actions that are in the supports
+    row_indices = np.where(row_support)[0]
+    col_indices = np.where(col_support)[0]
 
-    # Number of actions in the supports
-    m = len(row_indices)
-    n = len(col_indices)
-    
-    if m == 0 or n == 0:
+    # Get the number of actions in each support
+    num_row_support = len(row_indices)
+    num_col_support = len(col_indices)
+
+    # If either support is empty, no solution exists
+    if num_row_support == 0 or num_col_support == 0:
         return None
 
-    # Coefficients for the objective function (minimize -v)
-    c = np.zeros(n + 1)
-    c[-1] = -1  # We want to maximize v, so we minimize -v
+    # --- Set up the Linear Program ---
+    # We want to find the opponent's strategy (q) and the player's utility (v).
+    # The variables for the LP will be the probabilities for the opponent's
+    # supported actions, followed by the utility v.
+    # x = [q_1, q_2, ..., q_n, v], where n = num_col_support
 
-    # Inequality constraints matrix and vector
-    A_ub = np.zeros((m, n + 1))
-    b_ub = np.zeros(m)
+    # 1. Objective function: We are solving a feasibility problem, but we can
+    # frame it as maximizing the utility 'v', which is equivalent to minimizing '-v'.
+    # The coefficients 'c' correspond to the variables [q_1, ..., q_n, v].
+    c = np.zeros(num_col_support + 1)
+    c[-1] = -1  # Coefficient for v is -1 to minimize -v
 
-    for i in range(m):
-        A_ub[i, :-1] = -matrix[row_indices[i], col_indices]
-        A_ub[i, -1] = 1  # Coefficient for v
-        b_ub[i] = 0
+    # 2. Equality constraints (A_eq * x = b_eq):
+    # - The sum of the opponent's probabilities must equal 1.
+    # - The player must be indifferent between all actions in their support.
+    #   (Payoff for each supported row action must equal v).
+    A_eq = np.zeros((num_row_support + 1, num_col_support + 1))
+    b_eq = np.zeros(num_row_support + 1)
 
-    # Equality constraints matrix and vector (sum of probabilities = 1)
-    A_eq = np.zeros((1, n + 1))
+    # Constraint: sum(q_j) = 1
     A_eq[0, :-1] = 1
-    b_eq = np.array([1])
-    
-    # Bounds for each variable (probabilities >= 0 and v is unbounded)
-    bounds = [(0, None) for _ in range(n)] + [(None, None)]
+    b_eq[0] = 1
+
+    # Constraints: A[i,:] * q - v = 0 for all i in row_support
+    sub_matrix = matrix[row_indices][:, col_indices]
+    A_eq[1:, :-1] = sub_matrix
+    A_eq[1:, -1] = -1  # Subtract v
+
+    # 3. Inequality constraints (A_ub * x <= b_ub):
+    # - The player's payoff for any action *not* in their support must be
+    #   less than or equal to v.
+    rows_not_in_support = np.where(~row_support)[0]
+    num_rows_not_in_support = len(rows_not_in_support)
+
+    if num_rows_not_in_support > 0:
+        A_ub = np.zeros((num_rows_not_in_support, num_col_support + 1))
+        b_ub = np.zeros(num_rows_not_in_support)
+        
+        # Constraints: A[k,:] * q - v <= 0 for all k not in row_support
+        sub_matrix_not_supported = matrix[rows_not_in_support][:, col_indices]
+        A_ub[:, :-1] = sub_matrix_not_supported
+        A_ub[:, -1] = -1 # Subtract v
+    else:
+        # No inequality constraints if all rows are in the support
+        A_ub = None
+        b_ub = None
+
+    # 4. Bounds for variables:
+    # - Probabilities (q_j) must be non-negative (>= 0).
+    # - Utility (v) is unbounded.
+    bounds = [(0, None) for _ in range(num_col_support)] + [(None, None)]
 
     # Solve the linear program
-    result = scipy.optimize.linprog(
-        c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method='highs'
+    res = scipy.optimize.linprog(
+        c,
+        A_ub=A_ub,
+        b_ub=b_ub,
+        A_eq=A_eq,
+        b_eq=b_eq,
+        bounds=bounds,
+        method='highs'
     )
 
-    if result.success:
-        opponent_strategy = result.x[:-1]
-        return opponent_strategy
+    # If the solver found a solution, return the opponent's strategy
+    if res.success:
+        # The solution for the opponent's strategy (q)
+        opponent_strategy_on_support = res.x[:-1]
+        
+        # Create the full strategy vector, with zeros for non-supported actions
+        full_opponent_strategy = np.zeros(num_cols)
+        full_opponent_strategy[col_indices] = opponent_strategy_on_support
+        return full_opponent_strategy
     else:
+        # If no solution was found, the supports are not part of a NE
         return None
-
-import numpy as np
-from itertools import combinations
+    
+from itertools import product
 
 def support_enumeration(
     row_matrix: np.ndarray, col_matrix: np.ndarray
 ) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Run the Support Enumeration algorithm and return a list of all Nash equilibria
+
+    Parameters
+    ----------
+    row_matrix : np.ndarray
+        The row player's payoff matrix
+    col_matrix : np.ndarray
+        The column player's payoff matrix
+
+    Returns
+    -------
+    list[tuple[np.ndarray, np.ndarray]]
+        A list of strategy profiles corresponding to found Nash equilibria
     """
-    Run Support Enumeration and return all mixed/pure Nash equilibria as
-    (row_strategy, col_strategy) pairs of full-length probability vectors.
+    num_rows, num_cols = row_matrix.shape
+    equilibria = []
 
-    Requires a companion function:
-        verify_support(matrix, row_support, col_support) -> np.ndarray | None
-    which returns the opponent's mixed strategy on the full action set (zeros
-    off-support) or None if the support pair is infeasible.
-    """
-    n_rows, n_cols = row_matrix.shape
-    assert col_matrix.shape == (n_rows, n_cols), "Payoff matrices must align."
+    # Generate all non-empty subsets of row and column indices
+    row_subsets = [
+        np.array([1 if i in s else 0 for i in range(num_rows)], dtype=bool)
+        for r in range(1, num_rows + 1)
+        for s in __import__("itertools").combinations(range(num_rows), r)
+    ]
+    col_subsets = [
+        np.array([1 if i in s else 0 for i in range(num_cols)], dtype=bool)
+        for r in range(1, num_cols + 1)
+        for s in __import__("itertools").combinations(range(num_cols), r)
+    ]
 
-    eqs: list[tuple[np.ndarray, np.ndarray]] = []
-    seen: set[tuple[tuple[float, ...], tuple[float, ...]]] = set()
-    tol = 1e-8
+    # Iterate over all pairs of supports
+    for row_support, col_support in product(row_subsets, col_subsets):
+        # Find a candidate strategy for the row player that makes the column player indifferent
+        row_strategy = verify_support(col_matrix.T, col_support, row_support)
 
-    # All non-empty supports for rows and columns
-    row_supports = [np.array(s, dtype=int)
-                    for k in range(1, n_rows + 1)
-                    for s in combinations(range(n_rows), k)]
-    col_supports = [np.array(s, dtype=int)
-                    for k in range(1, n_cols + 1)
-                    for s in combinations(range(n_cols), k)]
+        # Find a candidate strategy for the column player that makes the row player indifferent
+        col_strategy = verify_support(row_matrix, row_support, col_support)
 
-    for Rs in row_supports:
-        for Cs in col_supports:
-            # 1) Given (Rs, Cs), find a column mix q that makes rows in Rs indifferent
-            q = verify_support(row_matrix, Rs, Cs)
-            if q is None:
-                continue
+        # If both strategies exist, we have a potential Nash Equilibrium
+        if row_strategy is not None and col_strategy is not None:
+            # Final check: The returned strategies must have supports that exactly match
+            # the supports we are currently testing. A probability of 0 in the returned
+            # strategy for an action we assumed was in the support means our assumption was wrong.
+            # We use a small tolerance for floating point comparisons.
+            TOL = 1e-6
+            is_row_support_correct = np.all(row_strategy[row_support] > TOL)
+            is_col_support_correct = np.all(col_strategy[col_support] > TOL)
 
-            # 2) Symmetric check: find a row mix p that makes columns in Cs indifferent.
-            # Reuse verify_support on the transposed game.
-            # Here, "rows" are Cs and "cols" are Rs; the returned vector is over original rows.
-            p = verify_support(col_matrix.T, Cs, Rs)
-            if p is None:
-                continue
+            if is_row_support_correct and is_col_support_correct:
+                equilibria.append((row_strategy, col_strategy))
 
-            # 3) Ensure supports actually match (eliminate spurious zero-prob mixes)
-            supp_p = np.flatnonzero(p > tol)
-            supp_q = np.flatnonzero(q > tol)
-            if not (np.array_equal(np.sort(supp_p), np.sort(Rs)) and
-                    np.array_equal(np.sort(supp_q), np.sort(Cs))):
-                continue
-
-            # 4) Best-response sanity (redundant but safe): no profitable deviation
-            # Row can't gain by deviating:
-            row_payoffs = row_matrix @ q
-            v_row = float(np.dot(p, row_payoffs))
-            if np.any(row_payoffs > v_row + 1e-7):
-                continue
-            # Column can't gain by deviating:
-            col_payoffs = col_matrix.T @ p  # expected payoff for each column action
-            v_col = float(np.dot(q, col_payoffs))
-            if np.any(col_payoffs > v_col + 1e-7):
-                continue
-
-            # 5) Deduplicate (handle the same equilibrium found via different supports)
-            key = (tuple(np.round(p, 10)), tuple(np.round(q, 10)))
-            if key not in seen:
-                seen.add(key)
-                eqs.append((p, q))
-
-    return eqs
-
-
+    return equilibria
 
 
 def main() -> None:
